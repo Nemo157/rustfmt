@@ -50,6 +50,30 @@ pub fn is_unstable_variant(attr: &syn::Attribute) -> bool {
     is_attr_path(attr, "unstable_variant")
 }
 
+/// Returns the value of the first `bool` attribute in the given slice or
+/// `None` if `bool` attribute is not available.
+pub fn find_config_bool(attrs: &[syn::Attribute]) -> Option<bool> {
+    attrs.iter().filter_map(config_bool).next()
+}
+
+/// Returns a bool literal value if the given attribute is `bool`
+/// attribute or `None` otherwise.
+pub fn config_bool(attr: &syn::Attribute) -> Option<bool> {
+    match &attr.meta {
+        syn::Meta::NameValue(syn::MetaNameValue {
+            path,
+            value: syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Bool(lit_bool), .. }),
+            ..
+        }) if path.is_ident("bool") => Some(lit_bool.value()),
+        _ => None,
+    }
+}
+
+/// Returns `true` if the given attribute is a `bool` attribute.
+pub fn is_config_bool(attr: &syn::Attribute) -> bool {
+    is_attr_name_value(attr, "bool")
+}
+
 fn is_attr_name_value(attr: &syn::Attribute, name: &str) -> bool {
     match &attr.meta {
         syn::Meta::NameValue(syn::MetaNameValue { path, .. }) if path.is_ident(name) => true,

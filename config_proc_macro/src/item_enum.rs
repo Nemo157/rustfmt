@@ -48,7 +48,7 @@ fn process_variant(variant: &syn::Variant) -> TokenStream {
     let metas = variant
         .attrs
         .iter()
-        .filter(|attr| !is_doc_hint(attr) && !is_config_value(attr) && !is_unstable_variant(attr));
+        .filter(|attr| !is_doc_hint(attr) && !is_config_value(attr) && !is_unstable_variant(attr) && !is_config_bool(attr));
     let attrs = fold_quote(metas, |meta| quote!(#meta));
     let syn::Variant { ident, fields, .. } = variant;
     quote!(#attrs #ident #fields)
@@ -123,12 +123,22 @@ fn impl_from_str(ident: &syn::Ident, variants: &Variants) -> TokenStream {
     let vs = variants
         .iter()
         .filter(|v| is_unit(v))
-        .map(|v| (config_value_of_variant(v), &v.ident));
-    let if_patterns = fold_quote(vs, |(s, v)| {
+        .map(|v| (config_value_of_variant(v), &v.ident, find_config_bool(&v.attrs)));
+    let if_patterns = fold_quote(vs, |(s, v, b)| {
+        let parse_bool = b.map(|b| {
+            let b = if b { "true" } else { "false" };
+            quote! {
+                if #b == s {
+                    return Ok(#ident::#v);
+                }
+            }
+        }).unwrap_or_default();
+
         quote! {
             if #s.eq_ignore_ascii_case(s) {
                 return Ok(#ident::#v);
             }
+            #parse_bool
         }
     });
     let mut err_msg = String::from("Bad variant, expected one of:");
@@ -210,6 +220,27 @@ fn impl_deserialize(ident: &syn::Ident, variants: &Variants) -> TokenStream {
     let supported_vs = variants.iter().filter(|v| is_unit(v));
     let allowed = fold_quote(supported_vs.map(config_value_of_variant), |s| quote!(#s,));
 
+    let mut bools =
+        variants.iter()
+        .filter(|v| is_unit(v))
+        .filter_map(|v| Some({
+            let bool = find_config_bool(&v.attrs)?;
+            let value = config_value_of_variant(v);
+            quote! {
+                #bool => return Ok(String::from(#value)),
+            }
+        })).peekable();
+
+    let visit_bool = bools.peek().is_some().then(|| {
+        quote! {
+            fn visit_bool<E>(self, value: bool) -> Result<String, E> {
+                match value {
+                    #(#bools)*
+                }
+            }
+        }
+    }).unwrap_or_default();
+
     quote! {
         impl<'de> serde::de::Deserialize<'de> for #ident {
             fn deserialize<D>(d: D) -> Result<Self, D::Error>
@@ -229,7 +260,9 @@ fn impl_deserialize(ident: &syn::Ident, variants: &Variants) -> TokenStream {
                     fn visit_str<E>(self, value: &str) -> Result<String, E> {
                         Ok(String::from(value))
                     }
+                    #visit_bool
                 }
+
                 let s = &d.deserialize_string(StringOnly::<D>(PhantomData))?;
 
                 #if_patterns

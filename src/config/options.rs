@@ -217,11 +217,14 @@ pub enum Verbosity {
 }
 
 /// Which comments to wrap
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize)]
+#[config_type]
+#[derive(Copy)]
 pub enum WrapComments {
     /// Don't wrap comments
+    #[bool = false]
     Off,
     /// Wrap all kinds of comments
+    #[bool = true]
     All,
     /// Only wrap doc comments
     Doc,
@@ -236,74 +239,6 @@ impl WrapComments {
 
     pub(crate) fn is_doc(self) -> bool {
         matches!(self, WrapComments::All | WrapComments::Doc)
-    }
-}
-
-impl fmt::Display for WrapComments {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            WrapComments::Off => f.write_str("Off"),
-            WrapComments::All => f.write_str("All"),
-            WrapComments::Doc => f.write_str("Doc"),
-            WrapComments::Normal => f.write_str("Normal"),
-        }
-    }
-}
-
-impl super::ConfigType for WrapComments {
-    fn doc_hint() -> String {
-        "[Off|All|Doc|Normal]".to_owned()
-    }
-
-    fn stable_variant(&self) -> bool {
-        true
-    }
-}
-
-impl std::str::FromStr for WrapComments {
-    type Err = &'static str;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "off" | "false" => Ok(WrapComments::Off),
-            "all" | "true" => Ok(WrapComments::All),
-            "doc" => Ok(WrapComments::Doc),
-            "normal" => Ok(WrapComments::Normal),
-            _ => Err("Bad variant, expected one of: `Off` `All` `Doc` `Normal`"),
-        }
-    }
-}
-
-impl<'de> serde::de::Deserialize<'de> for WrapComments {
-    fn deserialize<D>(d: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        use serde::de::Error;
-
-        struct StringOrBoolVisitor;
-
-        impl<'de> Visitor<'de> for StringOrBoolVisitor {
-            type Value = String;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                formatter.write_str("string")
-            }
-
-            fn visit_str<E>(self, value: &str) -> Result<String, E> {
-                Ok(String::from(value))
-            }
-
-            fn visit_bool<E>(self, value: bool) -> Result<String, E> {
-                Ok(value.to_string())
-            }
-        }
-
-        let s = d.deserialize_string(StringOrBoolVisitor)?;
-        s.parse().map_err(|_| {
-            static ALLOWED: &'static [&str] = &["Off", "All", "Doc", "Normal"];
-            D::Error::unknown_variant(&s, ALLOWED)
-        })
     }
 }
 
